@@ -1,0 +1,4 @@
+%dw 2.0
+
+type auto_566d52f7_ad5e_4697_8252_b175baca5c42_Output_Variables_identityDocument = String
+

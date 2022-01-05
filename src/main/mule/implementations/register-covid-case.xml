@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<mule xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core"
+	xmlns="http://www.mulesoft.org/schema/mule/core" xmlns:doc="http://www.mulesoft.org/schema/mule/documentation"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://www.mulesoft.org/schema/mule/core http://www.mulesoft.org/schema/mule/core/current/mule.xsd
+http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd">
+	
+	<flow name="post:\cases:application\json:covid-papi-config">
+        <set-variable value="#[attributes.headers.'x-correlation-id' default &quot;&quot;]" doc:name="Set correlationId" doc:id="a0bd808a-ba67-4a95-9803-f1f52483f559" variableName="correlationId"/>
+		<logger level="INFO" doc:name="Start Log" doc:id="d6b2ab03-a794-4e0f-a271-e3878111a6c5" message="transactionId:#[vars.transactionId],correlationId:#[vars.correlationId],message: Started register covid case flow, payload: #[payload]"/>
+		<ee:transform xmlns:ee="http://www.mulesoft.org/schema/mule/ee/core" xsi:schemaLocation="http://www.mulesoft.org/schema/mule/ee/core http://www.mulesoft.org/schema/mule/ee/core/current/mule-ee.xsd" doc:name="Assign Variables">
+            <ee:message>
+            </ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="covidCasePayload" ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	source: payload.source,
+	caseType: payload.caseType,
+	firstName: payload.firstName,
+	lastName: payload.lastName,
+	phone: payload.phone,
+	email: payload.email,
+	dateOfBirth: payload.dateOfBirth,
+	nationalID: payload.nationalID,
+	nationalIDType: payload.nationalIDType,
+	address: {
+		streetAddress: payload.address.streetAddress,
+		city: payload.address.city,
+		state: payload.address.state,
+		postal: payload.address.postal,
+		country: payload.address.country
+	}
+}]]></ee:set-variable>
+				<ee:set-variable variableName="identityDocument" ><![CDATA[payload.iDoc]]></ee:set-variable>
+				<ee:set-variable variableName="uhubHeaderParameters" ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	"client_id": Mule::p('secure::uhub.sapi.client_id'),
+	"client_secret": Mule::p('secure::uhub.sapi.client_secret'),
+	"x-transaction-id": vars.transactionId,
+	"x-correlation-id":vars.correlationId
+}]]></ee:set-variable>
+			</ee:variables>
+        
+</ee:transform>
+		<flow-ref doc:name="check-case-exist" doc:id="f7e50d82-4296-4f68-b7b2-fdd187a1c414" name="check-case-exist"/>
+		<flow-ref doc:name="upsert-covid-case" doc:id="fb4524f6-c5b2-42bc-bf6a-e3bb1ed8aa07" name="upsert-covid-case"/>
+		<ee:transform doc:name="Prepare WHO Payload" doc:id="a86d9875-e69a-4c23-a579-ba93b1810f15" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	"caseType": vars.covidCasePayload.caseType,
+	"firstName": vars.covidCasePayload.firstName,
+	"lastName": vars.covidCasePayload.lastName,
+	"phone": vars.covidCasePayload.phone,
+	"email": vars.covidCasePayload.email,
+	"dateOfBirth": vars.covidCasePayload.dateOfBirth,
+	"country": vars.covidCasePayload.address.country
+}]]></ee:set-payload>
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="whoHeaderParameters" ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	"client_id": Mule::p('who.sapi.client_id'),
+	"client_secret": Mule::p('who.sapi.client_secret'),
+	"x-transaction-id": vars.transactionId,
+	"x-correlation-id": vars.correlationId
+}]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<flow-ref doc:name="who-report-case-request" doc:id="889ea852-3b5e-46cc-bf0e-f8136b5f0ea3" name="who-report-case-request"/>
+		<ee:transform doc:name="Set Response" doc:id="5121372d-454e-430d-a836-98fb63b0cc24" >
+			<ee:message >
+				<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+  registrationID: vars.registrationId
+}]]></ee:set-payload>
+			</ee:message>
+		</ee:transform>
+    
+</flow>
+	<sub-flow name="check-case-exist" doc:id="31752d8c-764d-4865-873c-4cf109950091" >
+		<flow-ref doc:name="get-covid-case-by-national-id" doc:id="594f5526-d2da-4183-a857-2648d2dbb731" name="get-covid-case-by-national-id"/>
+		<ee:transform doc:name="Transform Message" doc:id="9ed397e1-4fd0-4008-83d8-307466d5a010" >
+			<ee:message >
+			</ee:message>
+			<ee:variables >
+				<ee:set-variable variableName="uhubResponse" ><![CDATA[%dw 2.0
+output application/java
+
+var lastVaccinationDate = if ( payload.code != 404  ) (payload filter (item) -> item.caseType == "vaccinated").createDate[0] else {}
+var recentCase = if (  payload.code != 404) (payload orderBy (item)->item.updateDate)[0] else {}
+---
+
+	if(payload.code != 404)
+	{
+			caseId: recentCase.caseID as String,
+			recentCaseType:recentCase.caseType,
+			vaccinatedFlag: if ( vars.covidCasePayload.caseType == "vaccinated" and lastVaccinationDate != null ) (daysBetween(lastVaccinationDate, now()) > 15) else (false)
+						
+	} else {}
+]]></ee:set-variable>
+			</ee:variables>
+		</ee:transform>
+		<logger level="INFO" doc:name="Logger" doc:id="39b36379-f00c-45f6-9574-2edad67541ac" message="#[vars.uhubResponse.recentCaseType] or #[vars.uhubResponse.recentCaseType] or #[vars.uhubResponse.vaccinatedFlag]"/>
+	</sub-flow>
+	<sub-flow name="upsert-covid-case" doc:id="b609fd2f-9dcf-46b5-b89d-40f5157c3eab" >
+		<choice doc:name="Case Exist?" doc:id="954ce477-b0ef-438b-b0d7-962167036d7a" >
+			<when expression='#[(payload.code == 404) or (vars.recentCaseType == "invalid" or vars.recentCaseType == "recovered" or vars.vaccinatedFlag == false)]'>
+				<flow-ref doc:name="post-covid-case-request" doc:id="5aaa0a00-4792-4ec3-a351-a3cf4e2b23d0" name="register-covid-case-request"/>
+				<set-variable value="#[payload[0]]" doc:name="Set registrationId" doc:id="e0225d02-64b8-4003-ab80-602df3425221" variableName="registrationId"/>
+				<ee:transform doc:name="Prepare upload Response" doc:id="bc4d9cb6-20cf-42d9-99d7-bf64cd24d0a6">
+					<ee:message>
+						<ee:set-payload><![CDATA[%dw 2.0
+output application/json
+---
+{
+	bucketName: Mule::p('secure::aws.s3.bucket.name'),
+	folderPath: Mule::p('secure::aws.s3.folder.path'),
+	fileName: vars.registrationId as String ++ ".png",
+	document: vars.identityDocument
+}]]></ee:set-payload>
+					</ee:message>
+					<ee:variables >
+						<ee:set-variable variableName="awsHeaderParameters" ><![CDATA[%dw 2.0
+output application/java
+---
+{
+	"client_id": Mule::p('aws.sapi.client_id'),
+	"client_secret": Mule::p('aws.sapi.client_secret'),
+	"x-transaction-id": vars.transactionId,
+	"x-correlation-id": vars.correlationId
+}]]></ee:set-variable>
+					</ee:variables>
+				</ee:transform>
+				<flow-ref doc:name="aws-upload-document-request" doc:id="321568b5-9244-4f27-96e4-6124e0a57a4c" name="aws-upload-document-request"/>
+			</when>
+			<otherwise>
+				<ee:transform doc:name="update-covid-case-request" doc:id="7bc93c9d-b8f3-452d-9488-c663124f7dd1" >
+					<ee:message >
+						<ee:set-payload ><![CDATA[%dw 2.0
+output application/json
+---
+{
+	caseID:vars.uhubResponse.caseId
+} ++  vars.covidCasePayload as Object]]></ee:set-payload>
+					</ee:message>
+				</ee:transform>
+				<flow-ref doc:name="update-covid-case-request" doc:id="037b44f8-43e3-4eff-82af-f86028961780" name="update-covid-case-request"/>
+				<set-variable value="#[payload.caseID]" doc:name="Set registrationId" doc:id="c1d5416d-8a5d-48f2-8825-5361971caeac" variableName="registrationId"/>
+			</otherwise>
+		</choice>
+	</sub-flow>
+	
+	
+</mule>

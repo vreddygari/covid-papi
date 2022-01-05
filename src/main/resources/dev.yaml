@@ -1,0 +1,34 @@
+http:
+ port: "8081"
+
+uhub.sapi:
+ host: "localhost"
+ port: "8082"
+ basepath: "covid/v1"
+ client_id: "0449bfb94ab74c118155aa8d66e5a786"
+ client_secret: "8d40A304444645578FA8887754763C2D"
+ subpath:
+  getcase: "cases"
+  registercase: "cases"
+  updatecase: "cases"
+ 
+aws.sapi:
+ host: "localhost"
+ port: "8083"
+ basepath: "covid/v1"
+ client_id: "0449bfb94ab74c118155aa8d66e5a786"
+ client_secret: "8d40A304444645578FA8887754763C2D"
+ subpath: "document"
+ 
+aws.s3:
+  bucket.name: "uho-docs"
+  folder.path: "vamshi"
+
+who.sapi:
+ host: "localhost"
+ port: "8084"
+ basepath: "covid/v1"
+ subpath: "case"
+ client_id: "0449bfb94ab74c118155aa8d66e5a786"
+ client_secret: "8d40A304444645578FA8887754763C2D"
+ 

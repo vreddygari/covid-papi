@@ -1,0 +1,9 @@
+%dw 2.0
+
+type auto_31752d8c_764d_4865_873c_4cf109950091_Input_Variables_uhubHeaderParameters = {|
+  client_id: String, 
+  client_secret: String, 
+  "x-transaction-id": Null, 
+  "x-correlation-id": String
+|}
+

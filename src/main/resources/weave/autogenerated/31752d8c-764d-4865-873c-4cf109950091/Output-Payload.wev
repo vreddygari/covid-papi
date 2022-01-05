@@ -1,0 +1,7 @@
+%dw 2.0
+
+type auto_31752d8c_764d_4865_873c_4cf109950091_Output_Payload = {
+  registrationID: String, 
+  _?: Any
+}
+
